@@ -2,12 +2,6 @@
 #include "utils.hpp"
 #include "eq_solver.hpp"
 
-// Вывод результатов в файл
-// void output_statistics(int size, double exec_time) {
-//     std::ofstream statistics{"statistics.csv", std::ios::app};
-//     statistics << size << "," << exec_time << "," << t_step << "\n";
-// }
-
 int main(int argc, char **argv) {
     MPI_Init(&argc, &argv);
     
@@ -18,8 +12,7 @@ int main(int argc, char **argv) {
     equation_t<types_of_eq::transf_eq> my_eq{};
     eq_solver my_solver{my_eq};
 
-    double start_time = MPI_Wtime();
-
+    double start = MPI_Wtime();
     if (size > 1) {
         my_solver.parallel_solution(rank, size);
     }
@@ -27,13 +20,13 @@ int main(int argc, char **argv) {
         my_solver.serial_solution();
     }
 
-    double end_time = MPI_Wtime();
+    double end = MPI_Wtime();
 
-    if (rank == ROOT) {
+    if (rank == 0) {
         dumper dump{};
         dump.output_solution(my_solver.get_t_knots_num(), my_solver.get_x_knots_num(), 
                              my_solver.get_grid(), my_eq.x_step, my_eq.t_step);
-        // output_statistics(size, end_time - start_time);
+        dump.output_statistics(size, end - start, my_eq.x_step, my_eq.t_step);
     }
 
     MPI_Finalize();

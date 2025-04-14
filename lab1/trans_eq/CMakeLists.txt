@@ -7,6 +7,7 @@ find_package(MPI REQUIRED)
 add_executable(${PROJECT_NAME} trans_eq.cpp)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE MPI::MPI_CXX debug_utils)
+target_include_directories(${PROJECT_NAME} PRIVATE ./include)
 
 message(STATUS "MPI CXX compiler: ${MPI_CXX_COMPILER}")
 message(STATUS "MPI include path: ${MPI_CXX_INCLUDE_PATH}")

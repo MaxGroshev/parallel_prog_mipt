@@ -1,12 +1,14 @@
-cmake_minimum_required(VERSION 3.28)
-project(lab1 LANGUAGES CXX)
+cmake_minimum_required(VERSION 3.21)
 
 #-----------------------------------------------------------------------------------------
 
-add_subdirectory(access)
-add_subdirectory(trans_eq)
+project(mpi_wrapper)
 
 #-----------------------------------------------------------------------------------------
+
+add_library(${PROJECT_NAME} INTERFACE .)
+
+target_include_directories(${PROJECT_NAME} INTERFACE .)
 
 
 

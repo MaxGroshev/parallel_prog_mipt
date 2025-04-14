@@ -5,11 +5,9 @@
 #include <iostream>
 #include <vector>
 
-#include <mpi.h>
-
 //-----------------------------------------------------------------------------
 
-const int ROOT = 0;
+static const int ROOT = 0;
 
 template<typename T>
 class eq_solver {
@@ -45,53 +43,44 @@ class eq_solver {
         size_t get_t_knots_num() const {return t_knots_num;};
         size_t get_x_knots_num() const {return x_knots_num;};
         void parallel_solution(int rank, int size) {
-            // Распределение точек по процессам
             int part = x_knots_num / size;
             int shift = x_knots_num % size;
-
             int num_knots = (rank == ROOT) ? part + shift : part;
-            int x_start = (rank == ROOT) ? 0 : part * rank + shift;
+            int x_start = (rank == ROOT)   ? 0 : part * rank + shift;
             int x_end = x_start + num_knots;
 
-            // Основной цикл по времени
             for (int knot_t = 0; knot_t < t_knots_num - 1; ++knot_t) {
-                // Вычисление внутренних точек
-                for (int knot_x = x_start + 1; knot_x < x_end; ++knot_x)
-                fill_layer(knot_t, knot_x);
+                for (int knot_x = x_start; knot_x < x_end; ++knot_x) {
+                    fill_layer(knot_t, knot_x);
+                }
 
-                // Обмен граничными точками
-                if (size > 1) {
-                    if (rank > 0) {
-                        MPI_Send(&grid[knot_t + 1][x_start], 1, MPI_DOUBLE, rank - 1, 0,
-                                MPI_COMM_WORLD);
-                        MPI_Recv(&grid[knot_t + 1][x_start - 1], 1, MPI_DOUBLE, rank - 1,
-                                0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                    }
+                if (rank > 0) {
+                    MPI_Send(&grid[knot_t + 1][x_start], 1, MPI_DOUBLE, rank - 1, 0,
+                            MPI_COMM_WORLD);
+                    MPI_Recv(&grid[knot_t + 1][x_start - 1], 1, MPI_DOUBLE, rank - 1,
+                            0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                }
 
-                    if (rank < size - 1) {
-                        MPI_Send(&grid[knot_t + 1][x_end - 1], 1, MPI_DOUBLE, rank + 1, 0,
-                                MPI_COMM_WORLD);
-                        MPI_Recv(&grid[knot_t + 1][x_end], 1, MPI_DOUBLE, rank + 1, 0,
+                if (rank < size - 1) {
+                    MPI_Send(&grid[knot_t + 1][x_end - 1], 1, MPI_DOUBLE, rank + 1, 0,
+                            MPI_COMM_WORLD);
+                    MPI_Recv(&grid[knot_t + 1][x_end], 1, MPI_DOUBLE, rank + 1, 0,
+                            MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                }
+                
+                MPI_Barrier(MPI_COMM_WORLD);
+                if (rank == ROOT) {
+                    for (int r = 1; r < size; ++r) {
+                        int first = part * r + shift;
+                        int last = first + ((r == size - 1) ? part : part);
+    
+                        MPI_Recv(&grid[knot_t + 1][first], last - first, MPI_DOUBLE, r, 0,
                                 MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                     }
                 }
-
-                MPI_Barrier(MPI_COMM_WORLD);
-            }
-
-            // Сбор результатов на главном процессе
-            if (rank == ROOT) {
-                for (int r = 1; r < size; ++r) {
-                    int first = part * r + shift;
-                    int last = first + ((r == size - 1) ? part : part);
-
-                    MPI_Recv(&grid[t_knots_num - 1][first], last - first, MPI_DOUBLE, r, 0,
-                            MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                else {
+                    MPI_Send(&grid[knot_t + 1][x_start], num_knots, MPI_DOUBLE, ROOT, 0, MPI_COMM_WORLD);
                 }
-
-            }
-            else {
-                MPI_Send(&grid[t_knots_num - 1][x_start], num_knots, MPI_DOUBLE, ROOT, 0, MPI_COMM_WORLD);
             }
         }
 

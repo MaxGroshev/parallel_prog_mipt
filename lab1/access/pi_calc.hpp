@@ -48,8 +48,7 @@ void run_prog(int argc, char**& argv) {
     auto partial_sum = helper.calculate_pi(start, end, total_steps);
 
     MPI_Reduce(&partial_sum, &helper.res, 1, MPI_DOUBLE, MPI_SUM, 0,
-               MPI_COMM_WORLD); // Собирает данные со всех процессов и применяет
-                                // к ним операцию - здесь это SUM
+               MPI_COMM_WORLD); 
 
     MPI_Finalize();
 
