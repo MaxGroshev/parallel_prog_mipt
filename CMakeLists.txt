@@ -12,7 +12,7 @@ add_compile_options(-std=c++20)
 
 add_subdirectory(debug_utils)
 add_subdirectory(lab1)
-# add_subdirectory(lab2)
+add_subdirectory(lab2)
 
 
 unset(TESTING_ENABLED CACHE)
