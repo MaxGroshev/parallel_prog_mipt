@@ -1,70 +1,109 @@
 #include <iostream>
 #include <cmath>
-#include <mpi.h>
+#include <mutex>
+#include <atomic>
+#include <condition_variable>
+#include <thread>
+#include <sys/types.h>
+#include <unistd.h>
 #include "debug_utils.hpp"
 
-class test_helper {
+namespace latency {
+
+class latency_helper {
     public:
-        int n_rank = 0;
-        int size   = 0;
-        size_t data_size = 0;
-        const int warmup_iters = 10;
-        const int measure_iters = 100;
-
-        double avg_time = 0;
-
-        const std::vector<int> suite = {      
-            16 * 1024,      
-            64 * 1024,      
-            256 * 1024,     
-            1 * 1024 * 1024,
-            10 * 1024 * 1024
-        };
-
-    public: 
-        test_helper(int n_rank_, int size_, size_t data_size_) : n_rank(n_rank_), size(size_), data_size(data_size_) {};
-        test_helper() {};
-        void run() {
-            for (int sz : suite) {
-                data_size = sz;
-                measure_communication();
-            }
-        }
-    private:
-        void measure_communication() {
-            std::vector<char> send_buf(data_size, '0');
-            std::vector<char> recv_buf(data_size);
-        
-            MPI_Barrier(MPI_COMM_WORLD);
-        
-            if (n_rank == 0) {
-                for (int i = 0; i < warmup_iters; ++i) {
-                    MPI_Send(send_buf.data(), data_size, MPI_BYTE, 1, 0, MPI_COMM_WORLD);
-                    MPI_Recv(recv_buf.data(), data_size, MPI_BYTE, 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                }
-                double total_time = 0.0;
-                for (int i = 0; i < measure_iters; ++i) {
-                    auto start = MPI_Wtime();
-                    MPI_Send(send_buf.data(), data_size, MPI_BYTE, 1, 0, MPI_COMM_WORLD);
-                    MPI_Recv(recv_buf.data(), data_size, MPI_BYTE, 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                    auto end = MPI_Wtime();
-                    total_time += (end - start);
-                }
-        
-                avg_time = total_time / measure_iters;
-                dump_res();
-            }
-        
-            else if (n_rank == 1) {
-                for (int i = 0; i < warmup_iters + measure_iters; ++i) {
-                    MPI_Recv(recv_buf.data(), data_size, MPI_BYTE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                    MPI_Send(recv_buf.data(), data_size, MPI_BYTE, 0, 0, MPI_COMM_WORLD);
-                }
-            }
-        }
-
-        void dump_res() {
-            std::cout << "Message size: " << data_size / 1024 << " KB"
-                        << ", Avg time: " << avg_time * 1e6 << " us" << std::endl;
-        }
+        std::mutex mutex_;
+        std::condition_variable cv;
+        bool data_ready = false;
+        bool response_ready = false;
+        int data = 0;
+        std::atomic<bool> done = false;
 };
+
+void producer(latency_helper& helper, int iterations) {
+    for (int i = 0; i < iterations; ++i) {
+        std::unique_lock<std::mutex> lock(helper.mutex_);
+        
+        helper.data = i;
+        helper.data_ready = true;
+        
+        helper.cv.notify_one();                
+        helper.cv.wait(lock, [&]{ return helper.response_ready; });
+        helper.response_ready = false;
+    }
+    helper.done = true;
+    helper.cv.notify_one();
+}
+
+void consumer(latency_helper& helper, int& result) {
+    while (!helper.done) {
+        std::unique_lock<std::mutex> lock(helper.mutex_);
+        
+        helper.cv.wait(lock, [&]{ return helper.data_ready || helper.done; });
+        
+        if (helper.done) break;
+        
+        result = helper.data;
+        helper.data_ready = false;
+        
+        helper.response_ready = true;
+        helper.cv.notify_one();
+    }
+}
+
+double measure_communication_time_thread(latency_helper& helper, int iterations) {
+    int result = 0;
+    
+    auto start_time = time_control::chrono_cur_time ();
+    
+    std::thread producer_thread(producer, std::ref(helper), iterations);
+    std::thread consumer_thread(consumer, std::ref(helper), std::ref(result));
+    
+    producer_thread.join();
+    consumer_thread.join();
+    
+    auto end_time = time_control::chrono_cur_time ();
+    
+    auto p_time = std::chrono::duration<double>(end_time - start_time).count();
+    return p_time / (iterations * 2); 
+}
+
+double measure_communication_time_pipe(int iterations) {
+    int buf_read[1];
+    int buf_write[1];
+    int parent_to_child[2]; // p->c
+    int child_to_parent[2]; // c->p
+
+    if (pipe(parent_to_child) == -1 || pipe(child_to_parent) == -1) {
+        std::cerr << "Pipe was not opened\n";
+        exit(1);
+    }
+    auto start_time = time_control::chrono_cur_time ();
+    if (pid_t pid = fork(); pid  == 0) {              
+        close(parent_to_child[1]);   
+        close(child_to_parent[0]);        
+        for (int i = 0; i < iterations; i++) {
+            buf_write[0] = getpid(); 
+            // std::cout << "Child: " << buf_write[0] << std::endl;
+            write(child_to_parent[1], buf_write, sizeof(buf_read));
+            read(parent_to_child[0], buf_read, sizeof(buf_read)); 
+            // std::cout << "parent msg: " << *buf_read << std::endl;
+        }             
+        exit(0);
+    }
+
+    close(parent_to_child[0]);   
+    close(child_to_parent[1]); 
+    for (int i = 0; i < iterations; i++) {
+        read(child_to_parent[0], buf_read, sizeof(buf_read)); 
+        // std::cout << "child msg:" << *buf_read << std::endl;
+        buf_write[0] = getpid();   
+        // std::cout << "Parent: " << buf_write[0] << std::endl; 
+        write(parent_to_child[1], buf_write, sizeof(buf_read));
+    }    
+    auto end_time = time_control::chrono_cur_time ();
+    auto p_time = std::chrono::duration<double>(end_time - start_time).count();
+    return p_time / (iterations * 2); 
+}
+
+}

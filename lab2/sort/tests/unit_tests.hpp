@@ -55,7 +55,6 @@ TEST_F(sorting, p_sort) {
 
         statistics << n_elems << " " << p_time << " " << time << "\n";
 
-
         n_elems *= 2;
     }
 }
