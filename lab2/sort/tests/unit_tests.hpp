@@ -33,10 +33,11 @@ TEST_F(sorting, p_sort) {
     std::ofstream statistics{dump_stat_file};
 
     size_t n_elems = 2;
-    for (int i = 1; i < 15; i++) {
+    for (int i = 1; i < 25; i++) {
         std::vector<int> data(n_elems);
         init_data(data, n_elems);
-        auto p_data = data;
+        auto paral_data = data;
+        auto pool_data = data;
 
 
         auto start_time = time_control::chrono_cur_time ();
@@ -44,16 +45,22 @@ TEST_F(sorting, p_sort) {
         ASSERT_TRUE(std::is_sorted(data.begin(), data.end()));
         auto end_time = time_control::chrono_cur_time ();
         auto time = std::chrono::duration<double>(end_time - start_time).count();
-        // std::clog << "Total run time: " << n_elems << "  " << (end_time - start_time) << std::endl;
+
+        // start_time = time_control::chrono_cur_time ();
+        // std_like::paral_quicksort(paral_data.begin(), paral_data.end() - 1);
+        // ASSERT_TRUE(std::is_sorted(paral_data.begin(), paral_data.end()));
+        // end_time = time_control::chrono_cur_time ();
+        // auto paral_time = std::chrono::duration<double>(end_time - start_time).count();
+        // std::clog << "Total run time: " << (end_time - start_time) << std::endl;
 
         start_time = time_control::chrono_cur_time ();
-        std_like::p_quicksort(p_data.begin(), p_data.end() - 1);
-        ASSERT_TRUE(std::is_sorted(p_data.begin(), p_data.end()));
+        std_like::pool_quicksort(pool_data.begin(), pool_data.end() - 1);
+        ASSERT_TRUE(std::is_sorted(pool_data.begin(), pool_data.end()));
         end_time = time_control::chrono_cur_time ();
-        auto p_time = std::chrono::duration<double>(end_time - start_time).count();
-        std::clog << "Total run time: " << (end_time - start_time) << std::endl;
+        auto pool_time = std::chrono::duration<double>(end_time - start_time).count();
+        std::clog << n_elems << std::endl;
 
-        statistics << n_elems << " " << p_time << " " << time << "\n";
+        statistics << n_elems << " " << pool_time << "  " << time << "\n";
 
         n_elems *= 2;
     }

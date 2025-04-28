@@ -5,7 +5,7 @@ project(lab1 LANGUAGES CXX)
 
 add_subdirectory(sort)
 add_subdirectory(latency)
-# add_subdirectory(integrate)
+add_subdirectory(integrate)
 
 #-----------------------------------------------------------------------------------------
 
